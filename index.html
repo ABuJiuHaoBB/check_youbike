@@ -167,17 +167,21 @@ function travelTime(dist_m, kmh){
 }
 
 // ---------- 決策分數 ----------
+// 距離分數：300m 內滿分，300m 後線性遞減（扣分），至 1000m 為 0
+function distScoreOf(d){
+  return Math.max(0, 1 - Math.max(0, d - 300)/700);
+}
 function borrowScore(s){
   // 車多為贏（車數權重最高）；距離與機率；附近站點車多則加權（即使本站沒車，下一站機會大）
   const countScore = Math.min(s.available_rent_bikes/10, 1);   // 車數
-  const distScore  = Math.max(0, 1 - dToUser(s)/1000);
+  const distScore  = distScoreOf(dToUser(s));
   const prob       = s.available_rent_bikes / s.Quantity;      // 佔用率（校正）
   const nbScore    = Math.min((nbMap[s.sno]||0)/10, 1);        // 附近站車多（10 台即滿分）
   return 0.40*countScore + 0.25*distScore + 0.20*prob + 0.15*nbScore;
 }
 function returnScore(s){
   const slotRatio = s.available_return_bikes / s.Quantity;
-  const distScore = Math.max(0, 1 - dToUser(s)/1000);
+  const distScore = distScoreOf(dToUser(s));
   return 0.55*distScore + 0.45*slotRatio;
 }
 
