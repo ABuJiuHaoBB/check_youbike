@@ -240,14 +240,14 @@ function build(){
     <div class="big-card" onclick="openMap(${rec.latitude},${rec.longitude},'${shortName(rec.sna)}')">
       <h2>📍 ${shortName(rec.sna)} <span class="badge ${lvlRec}">${badgeText[lvlRec]}</span><span class="chev">›</span></h2>
       <div class="dir">距你 <b>${recD.toFixed(0)}m</b>（往${recDir}）${mode==="borrow"?"步行約":"騎車約"}${travelTime(recD, mode==="borrow"?3.5:8)}</div>
-      <div class="count ${lvlRec}">${mode==="borrow" ? "可借 "+mainVal(rec) : "空位 "+mainVal(rec)+"<small>總量 "+rec.Quantity+"</small>"}</div>
+      <div class="count ${lvlRec}">${mode==="borrow" ? "可借 "+mainVal(rec) : "空位 "+mainVal(rec)+"<small>"+rec.Quantity+"格</small>"}</div>
       <div class="info">${rec.mday}${isStale(rec.mday)?" <span class='stale'>超過兩分鐘未更新</span>":""}｜點卡片在地圖顯示</div>
     </div>`;
 
   const cells = L2sorted.map(s=>{
     const lvl = level(mainVal(s));
     const d = dToUser(s), dir = dir4(bearing(pos.lat,pos.lon,s.latitude,s.longitude));
-    const countLine = mode==="borrow" ? `可借 ${mainVal(s)}` : `空位 ${mainVal(s)}<small>總量 ${s.Quantity}</small>`;
+    const countLine = mode==="borrow" ? `可借 ${mainVal(s)}` : `空位 ${mainVal(s)}<small>${s.Quantity}格</small>`;
     const stale = isStale(s.mday);
     return `<div class="card" onclick="openMap(${s.latitude},${s.longitude},'${shortName(s.sna)}')">
       <div class="name">${shortName(s.sna)} <span class="chev">›</span></div>
