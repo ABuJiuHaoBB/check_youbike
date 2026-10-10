@@ -89,6 +89,7 @@ let pos = null;
 let raw = [];
 let lastFetch = null;
 let locating = false;
+let nbMap = {};              // 每個站 500m 內其他站的總車數（供借車加權）
 
 // 借車：車>10 綠 / 3-9 黃 / 0-2 紅  還車：空位>5 綠 / 1-4 黃 / 0 紅
 function level(count){
@@ -167,11 +168,12 @@ function travelTime(dist_m, kmh){
 
 // ---------- 決策分數 ----------
 function borrowScore(s){
-  // 車多為贏（車數權重最高）；距離與機率同等重要；佔用率僅作容量校正（不再重複計權重）
-  const countScore = Math.min(s.available_rent_bikes/10, 1);   // 車數（14 台即達滿分）
+  // 車多為贏（車數權重最高）；距離與機率；附近站點車多則加權（即使本站沒車，下一站機會大）
+  const countScore = Math.min(s.available_rent_bikes/10, 1);   // 車數
   const distScore  = Math.max(0, 1 - dToUser(s)/1000);
-  const prob       = s.available_rent_bikes / s.Quantity;      // 佔用率（輕量校正）
-  return 0.45*countScore + 0.30*distScore + 0.25*prob;
+  const prob       = s.available_rent_bikes / s.Quantity;      // 佔用率（校正）
+  const nbScore    = Math.min((nbMap[s.sno]||0)/10, 1);        // 附近站車多（10 台即滿分）
+  return 0.40*countScore + 0.25*distScore + 0.20*prob + 0.15*nbScore;
 }
 function returnScore(s){
   const slotRatio = s.available_return_bikes / s.Quantity;
@@ -180,12 +182,27 @@ function returnScore(s){
 }
 
 // ---------- 抓取 ----------
+// 計算每個站 500m 內其他站的總車數（僅供借車加權；每次資料刷新時重算）
+function computeNbMap(){
+  nbMap = {};
+  for(let i=0;i<raw.length;i++){
+    const a = raw[i]; let sum = 0;
+    for(let j=0;j<raw.length;j++){
+      if(i===j) continue;
+      const b = raw[j];
+      if(hav(a.latitude,a.longitude,b.latitude,b.longitude) <= 500){ sum += b.available_rent_bikes; }
+    }
+    nbMap[a.sno] = sum;
+  }
+}
+
 async function fetchJson(){
   try{
     const r = await fetch(URL); const j = await r.json();
     raw = j.filter(d=>String(d.act)==="1" && d.Quantity>0);
     lastFetch = new Date();
     setMeta(`已刷新 ${lastFetch.toLocaleTimeString()}｜共 ${raw.length} 站`);
+    computeNbMap();
     build();
   }catch(e){ setMeta("抓取失敗："+e.message); }
 }
