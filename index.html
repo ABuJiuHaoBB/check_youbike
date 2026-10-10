@@ -142,9 +142,9 @@ function dir4(b){
 function dToUser(s){ return hav(pos.lat,pos.lon,s.latitude,s.longitude); }
 // 濾掉多餘的站名前綴（所有站名都以 YouBike2.0_ 開頭）
 function shortName(n){ return String(n).replace(/^YouBike2\.0_/, ""); }
-// 步行時間（以 5km/h ≈ 1.3889 m/s 計算），以 0.5 分鐘為粒度，如「2分半」
+// 步行時間（以 3.5km/h ≈ 0.9722 m/s 計算），以 0.5 分鐘為粒度，如「2分半」
 function walkTime(dist_m){
-  const sec = dist_m / 1.3889;
+  const sec = dist_m / 0.9722;
   const halfMin = Math.round(sec / 30);
   const mins = halfMin / 2;
   if(mins < 1) return "不到1分";
