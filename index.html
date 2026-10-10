@@ -307,7 +307,13 @@ function build(){
 }
 
 function openMap(lat,lon,name){
-  window.location.href = `https://maps.apple.com/?ll=${lat},${lon}&q=${encodeURIComponent(name)}`;
+  const q = encodeURIComponent(name);
+  // 依平台選擇地圖：iOS→Apple Maps；Android/其他→Google Maps
+  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+  const u = isIOS
+    ? `https://maps.apple.com/?ll=${lat},${lon}&q=${q}`
+    : `https://www.google.com/maps/search/?api=1&query=${lat},${lon}`;
+  window.location.href = u;
 }
 function setMode(m){ mode=m; build(); document.querySelector(".tab.borrow").classList.toggle("active",m==="borrow");
   document.querySelector(".tab.return").classList.toggle("active",m==="return"); }
