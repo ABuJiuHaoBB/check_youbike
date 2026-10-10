@@ -219,7 +219,7 @@ function build(){
       <h2>📍 ${shortName(rec.sna)} <span class="badge ${lvlRec}">${badgeText[lvlRec]}</span><span class="chev">›</span></h2>
       <div class="dir">距你 <b>${recD.toFixed(0)}m</b>（往${recDir}）</div>
       <div class="count ${lvlRec}">${mainVal(rec)} / ${rec.Quantity} ${mode==="borrow"?"可借":"空位"}</div>
-      <div class="info">來源更新 ${rec.mday}｜點卡片在地圖顯示</div>
+      <div class="info">${rec.mday}｜點卡片在地圖顯示</div>
     </div>`;
 
   const cells = L2sorted.map(s=>{
@@ -227,7 +227,7 @@ function build(){
     const d = dToUser(s), dir = dir4(bearing(pos.lat,pos.lon,s.latitude,s.longitude));
     return `<div class="card" onclick="openMap(${s.latitude},${s.longitude},'${shortName(s.sna)}')">
       <div class="name">${shortName(s.sna)} <span class="badge ${lvl}">${badgeText[lvl]}</span><span class="chev">›</span></div>
-      <div class="info">距你 ${d.toFixed(0)}m（往${dir}）｜來源 ${s.mday}</div>
+      <div class="info">距你 ${d.toFixed(0)}m（往${dir}）｜${s.mday}</div>
       <div class="count ${lvl}">${mainVal(s)} / ${s.Quantity} ${mode==="borrow"?"可借":"空位"}</div>
     </div>`;
   }).join("");
