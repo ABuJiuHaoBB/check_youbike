@@ -197,11 +197,11 @@ function build(){
   }
   if(!rec){ setMeta("附近無可用站"); return; }
 
-  const nearest = stations.reduce((a,s)=>dToUser(s)<dToUser(a)?s:a);
-  const dAnchor = (s)=>hav(nearest.latitude,nearest.longitude,s.latitude,s.longitude);
-  const L2 = stations.filter(s=>s.sno!==nearest.sno).map(s=>({s,d:dAnchor(s)}))
+  const nearest = stations.reduce((a,s)=>dToUser(s)<dToUser(a)?s:a);   // 空間錨點（最近站）
+  // 第2層（顯示格）：離「使用者」最近的 6 站（含最近站；排除推薦站，避免與大卡重複）
+  const L2 = stations.filter(s=>s.sno!==rec.sno).map(s=>({s,d:dToUser(s)}))
                      .filter(x=>x.d>0).sort((a,b)=>a.d-b.d).slice(0,6).map(x=>x.s);
-  const L2sorted = L2.slice().sort((a,b)=>dToUser(a)-dToUser(b));
+  const L2sorted = L2;   // 已依距離排序
 
   const excluded = new Set([rec.sno, nearest.sno, ...L2.map(s=>s.sno)]);
   const seen = new Set(); const L3=[];
