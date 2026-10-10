@@ -92,7 +92,8 @@ let locating = false;
 // 借車：車>10 綠 / 3-9 黃 / 0-2 紅  還車：空位>5 綠 / 1-4 黃 / 0 紅
 function level(count){
   if(mode==="borrow") return count>10 ? "green" : (count>=3 ? "yellow" : "red");
-  return count>5 ? "green" : (count>=1 ? "yellow" : "red");
+  // 還車：機會高(≥6) / 有機會(2-5) / 先不要(0-1)
+  return count>=6 ? "green" : (count>=2 ? "yellow" : "red");
 }
 const badgeText = {green:"機會高", yellow:"有機會", red:"先不要"};
 
