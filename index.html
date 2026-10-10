@@ -118,7 +118,8 @@ function dir4(b){
   if(b<225) return "南";
   return "西";
 }
-function dToUser(s){ return hav(pos.lat,pos.lon,s.latitude,s.longitude); }
+// 濾掉多餘的站名前綴（所有站名都以 YouBike2.0_ 開頭）
+function shortName(n){ return String(n).replace(/^YouBike2\.0_/, ""); }
 
 // ---------- 決策分數 ----------
 // 借車：車多為贏 + 距離 + 機率(佔用率近似)
@@ -202,21 +203,21 @@ function build(){
   const recD = dToUser(rec), recDir = dir4(bearing(pos.lat,pos.lon,rec.latitude,rec.longitude));
   document.getElementById("big").innerHTML = `
     <div class="big-card ${lvlRec==="red"?"disabled":""}">
-      <h2>📍 ${rec.sna} <span class="badge" style="background:${badgeColor[lvlRec]}">${badgeText[lvlRec]}</span></h2>
+      <h2>📍 ${shortName(rec.sna)} <span class="badge" style="background:${badgeColor[lvlRec]}">${badgeText[lvlRec]}</span></h2>
       <div class="dir">距你 <b>${recD.toFixed(0)}m</b>（往${recDir}）</div>
       <div class="count" style="color:${badgeColor[lvlRec]}">${mainVal(rec)} / ${rec.Quantity} ${mode==="borrow"?"可借":"空位"}</div>
       <div class="info">來源更新 ${rec.mday}</div>
-      <button class="btn-map" onclick="openMap(${rec.latitude},${rec.longitude},'${rec.sna}')">🗺️ 在地圖顯示</button>
+      <button class="btn-map" onclick="openMap(${rec.latitude},${rec.longitude},'${shortName(rec.sna)}')">🗺️ 在地圖顯示</button>
     </div>`;
 
   const cells = L2sorted.map(s=>{
     const lvl = level(mainVal(s));
     const d = dToUser(s), dir = dir4(bearing(pos.lat,pos.lon,s.latitude,s.longitude));
     return `<div class="card ${lvl==="red"?"disabled":""}">
-      <div class="name">${s.sna} <span class="badge" style="background:${badgeColor[lvl]}">${badgeText[lvl]}</span></div>
+      <div class="name">${shortName(s.sna)} <span class="badge" style="background:${badgeColor[lvl]}">${badgeText[lvl]}</span></div>
       <div class="info">距你 ${d.toFixed(0)}m（往${dir}）｜來源 ${s.mday}</div>
       <div class="count" style="color:${badgeColor[lvl]}">${mainVal(s)} / ${s.Quantity} ${mode==="borrow"?"可借":"空位"}</div>
-      <button class="btn-map" onclick="openMap(${s.latitude},${s.longitude},'${s.sna}')">🗺️ 在地圖顯示</button>
+      <button class="btn-map" onclick="openMap(${s.latitude},${s.longitude},'${shortName(s.sna)}')">🗺️ 在地圖顯示</button>
     </div>`;
   }).join("");
   document.getElementById("grid").innerHTML = cells;
@@ -225,7 +226,7 @@ function build(){
   const areaBikes = L3.reduce((a,s)=>a+s.available_rent_bikes,0) + L2.reduce((a,s)=>a+s.available_rent_bikes,0);
   let recText;
   if(mode==="borrow"){
-    recText = `✅ 前往推薦站「${rec.sna}」（${recDir} ${recD.toFixed(0)}m）——車 ${rec.available_rent_bikes}/${rec.Quantity}，走過去保證借得到。<br>`;
+    recText = `✅ 前往推薦站「${shortName(rec.sna)}」（${recDir} ${recD.toFixed(0)}m）——車 ${rec.available_rent_bikes}/${rec.Quantity}，走過去保證借得到。<br>`;
     if(mainVal(rec)<=2){
       recText += `<b>備選</b>：附近 ${L2sorted.slice().sort((a,b)=>b.available_rent_bikes-a.available_rent_bikes)[0]?.sna ?? ""}（${L2sorted[0]?.sna?("車 "+L2sorted.sort((a,b)=>b.available_rent_bikes-a.available_rent_bikes)[0].available_rent_bikes):""}）`;
     } else {
@@ -234,8 +235,8 @@ function build(){
   }else{
     const has = rec.available_return_bikes>0;
     recText = has
-      ? `✅ 前往最近可還站「${rec.sna}」（${recDir} ${recD.toFixed(0)}m）——空位 ${rec.available_return_bikes}/${rec.Quantity}。<br>附近（含第3層）共 ${areaBikes} 台車可借 → 空位會持續釋出。`
-      : `⚠️ 附近都滿了。往${recDir} ${recD.toFixed(0)}m 的「${rec.sna}」空位 ${rec.available_return_bikes}/${rec.Quantity}（低把握）；可等車多的站釋出空位。`;
+      ? `✅ 前往最近可還站「${shortName(rec.sna)}」（${recDir} ${recD.toFixed(0)}m）——空位 ${rec.available_return_bikes}/${rec.Quantity}。<br>附近（含第3層）共 ${areaBikes} 台車可借 → 空位會持續釋出。`
+      : `⚠️ 附近都滿了。往${recDir} ${recD.toFixed(0)}m 的「${shortName(rec.sna)}」空位 ${rec.available_return_bikes}/${rec.Quantity}（低把握）；可等車多的站釋出空位。`;
   }
   document.getElementById("recommend").innerHTML = recText;
 }
