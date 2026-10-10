@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>YouBike 決策助手</title>
+<style>
+  :root {
+    --green:#2ecc71; --yellow:#f1c40f; --red:#e74c3c;
+    --bg:#f4f6f8; --card:#fff; --muted:#7f8c8d; --line:#e0e4e8;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:-apple-system,BlinkMacSystemFont,"PingFang TC",sans-serif; background:var(--bg); color:#222; }
+  header { position:sticky; top:0; background:#fff; border-bottom:1px solid var(--line); padding:10px 14px; z-index:5; }
+  .tabs { display:flex; gap:10px; }
+  .tab { flex:1; padding:10px; text-align:center; border-radius:10px; border:1px solid var(--line); background:#fff; font-size:16px; font-weight:600; cursor:pointer; }
+  .tab.active { color:#fff; }
+  .tab.borrow.active { background:var(--green); border-color:var(--green); }
+  .tab.return.active { background:var(--red); border-color:var(--red); }
+  .meta { font-size:12px; color:var(--muted); margin-top:8px; }
+  main { padding:14px; }
+  .big-card { background:var(--card); border-radius:16px; padding:16px; margin-bottom:14px; border:1px solid var(--line); }
+  .big-card h2 { margin:0 0 4px; font-size:20px; }
+  .big-card .dir { font-size:14px; color:var(--muted); }
+  .grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .card { background:var(--card); border-radius:14px; padding:12px; border:1px solid var(--line); }
+  .card .name { font-weight:600; margin:0 0 2px; }
+  .card .info { font-size:13px; color:var(--muted); }
+  .count { font-size:18px; font-weight:700; margin:6px 0; }
+  .badge { display:inline-block; padding:2px 8px; border-radius:8px; color:#fff; font-size:12px; margin-left:6px; }
+  .btn-map { margin-top:6px; background:#007aff; color:#fff; border:none; border-radius:10px; padding:8px 10px; font-size:13px; cursor:pointer; width:100%; }
+  .recommend { background:#fff8e1; border:1px solid #f1c40f; border-radius:12px; padding:10px 12px; font-size:13px; margin-top:14px; }
+  .refresh-btn { margin-top:8px; background:#007aff; color:#fff; border:none; border-radius:10px; padding:6px 12px; font-size:13px; cursor:pointer; }
+  .actions { display:flex; gap:8px; margin-top:8px; }
+  .stale { color:var(--red); }
+  .disabled { opacity:.45; }
+</style>
+</head>
+<body>
+<header>
+  <div class="tabs">
+    <div class="tab borrow active" onclick="setMode('borrow')">🚲 借車模式</div>
+    <div class="tab return" onclick="setMode('return')">🔙 還車模式</div>
+  </div>
+  <div class="meta" id="meta">定位中…</div>
+  <div class="actions">
+    <button class="refresh-btn" onclick="locate(true)">📍 重新定位</button>
+    <button class="refresh-btn" onclick="refreshNow()">立即刷新</button>
+  </div>
+</header>
+<main>
+  <div id="big"></div>
+  <div class="grid" id="grid"></div>
+  <div class="recommend" id="recommend"></div>
+</main>
+<script>
+const URL = "https://tcgbusfs.blob.core.windows.net/dotapp/youbike/v2/youbike_immediate.json";
+const REFRESH_MS = 60000;
+const RADIUS_M = 800;      // 推薦站搜尋半徑（公尺）
+let mode = "borrow";        // borrow / return
+let pos = null;
+let raw = [];
+let lastFetch = null;
+let locating = false;        // 避免重複定位
+
+// 借車：車>10 綠 / 3-9 黃 / 0-2 紅  還車：空位>5 綠 / 1-4 黃 / 0 紅
+function level(count){
+  if(mode==="borrow") return count>10 ? "green" : (count>=3 ? "yellow" : "red");
+  return count>5 ? "green" : (count>=1 ? "yellow" : "red");
+}
+const badgeText = {green:"高把握", yellow:"留意", red:"低把握"};
+const badgeColor = {green:"var(--green)", yellow:"var(--yellow)", red:"var(--red)"};
+
+// ---------- 定位 ----------
+function locate(manual){
+  if(!navigator.geolocation){ setMeta("瀏覽器不支援定位"); return; }
+  if(locating) return;                       // 已在定位中，忽略重複觸發
+  locating = true;
+  setMeta(manual ? "重新定位中…（若無詢問，請到設定允許 Safari 定位）" : "定位中…");
+  // 先低精度快速定位（iOS 高精度易逾時），成功後再啟用高精度追蹤
+  navigator.geolocation.getCurrentPosition(
+    p => { pos={lat:p.coords.latitude, lon:p.coords.longitude};
+           setMeta(`定位完成 (${pos.lat.toFixed(4)}, ${pos.lon.toFixed(4)})`);
+           locating=false; build();
+           // 啟用連續高精度更新，讓位置隨移動刷新
+           navigator.geolocation.watchPosition(
+             q => { pos={lat:q.coords.latitude, lon:q.coords.longitude}; build(); },
+             ()=>{}, { enableHighAccuracy:true, maximumAge:10000 });
+    },
+    e => {
+      const msg = e.code===1 ? "定位被拒絕：到『設定 › 隱私權 › 定位服務 › Safari』允許"
+               : e.code===2 ? "定位無法取得：網路/GPS 訊號弱，請到空曠處重試"
+               : e.code===3 ? "定位逾時：已用預設座標（建議改用 https 代管網址以跳出定位詢問）"
+               : "定位失敗：已用預設座標";
+      setMeta("⚠️ "+msg);
+      pos={lat:25.04524, lon:121.54659}; locating=false; build();
+    },
+    { enableHighAccuracy:false, timeout:20000, maximumAge:60000 }
+  );
+}
+
+// ---------- 幾何 ----------
+function hav(lat1,lon1,lat2,lon2){
+  const R=6371, dlat=(lat2-lat1)*Math.PI/180, dlon=(lon2-lon1)*Math.PI/180;
+  const a=Math.sin(dlat/2)**2+Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dlon/2)**2;
+  return 2*R*Math.asin(Math.sqrt(a))*1000;
+}
+function bearing(lat1,lon1,lat2,lon2){
+  const dlon=(lon2-lon1)*Math.PI/180;
+  const y=Math.sin(dlon)*Math.cos(lat2*Math.PI/180);
+  const x=Math.cos(lat1*Math.PI/180)*Math.sin(lat2*Math.PI/180)-Math.sin(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.cos(dlon);
+  return (Math.atan2(y,x)*180/Math.PI+360)%360;
+}
+// 4 方位（東/南/西/北）——使用者指定只要 4 方位
+function dir4(b){
+  if(b<45||b>=315) return "北";
+  if(b<135) return "東";
+  if(b<225) return "南";
+  return "西";
+}
+function dToUser(s){ return hav(pos.lat,pos.lon,s.latitude,s.longitude); }
+
+// ---------- 決策分數 ----------
+// 借車：車多為贏 + 距離 + 機率(佔用率近似)
+function borrowScore(s){
+  const countScore = Math.min(s.available_rent_bikes/10, 1);
+  const distScore  = Math.max(0, 1 - dToUser(s)/1000);
+  const prob       = s.available_rent_bikes / s.Quantity;
+  return 0.45*countScore + 0.20*distScore + 0.20*prob + 0.15*prob;
+}
+// 還車：以「最近且可還」為優先（使用者：到場才開，要最近最可能還到車）
+function returnScore(s){
+  const slotRatio = s.available_return_bikes / s.Quantity;
+  const distScore = Math.max(0, 1 - dToUser(s)/1000);
+  return 0.55*distScore + 0.45*slotRatio;   // 距離權重高（就近還）
+}
+
+// ---------- 抓取 ----------
+async function fetchJson(){
+  try{
+    const r = await fetch(URL); const j = await r.json();
+    raw = j.filter(d=>String(d.act)==="1" && d.Quantity>0);
+    lastFetch = new Date();
+    setMeta(`已刷新 ${lastFetch.toLocaleTimeString()}｜共 ${raw.length} 站`);
+    build();
+  }catch(e){ setMeta("抓取失敗："+e.message); }
+}
+function refreshNow(){ setMeta("刷新中…"); fetchJson(); }
+function setMeta(t){ document.getElementById("meta").textContent=t; }
+
+// ---------- 主流程（三層 + 推薦站） ----------
+function build(){
+  if(!pos || !raw.length) return;
+  const stations = raw;
+  const inRadius = stations.filter(s=>dToUser(s)<=RADIUS_M);
+
+  // 推薦站（大卡）
+  let rec = null;
+  if(mode==="borrow"){
+    let best=null, bs=-1;
+    for(const s of inRadius){ const sc=borrowScore(s); if(sc>bs){bs=sc;best=s;} }
+    rec = best || stations.reduce((a,s)=>borrowScore(s)>borrowScore(a)?s:a);
+  }else{
+    // 還車：先找「有空位」的最近站；若都沒有，取最近站（標低把握）
+    const withSlots = inRadius.filter(s=>s.available_return_bikes>0)
+                              .sort((a,b)=>dToUser(a)-dToUser(b));
+    rec = withSlots[0] || inRadius.sort((a,b)=>dToUser(a)-dToUser(b))[0] || stations[0];
+  }
+  if(!rec){ setMeta("附近無可用站"); return; }
+
+  // 最近站（空間錨點，供第2/3層與距離排序）
+  const nearest = stations.reduce((a,s)=>dToUser(s)<dToUser(a)?s:a);
+
+  // 第2層：離「最近站」最近的 6 站（顯示時依「到使用者距離」排序）
+  const dAnchor = (s)=>hav(nearest.latitude,nearest.longitude,s.latitude,s.longitude);
+  const L2 = stations.filter(s=>s.sno!==nearest.sno).map(s=>({s,d:dAnchor(s)}))
+                     .filter(x=>x.d>0).sort((a,b)=>a.d-b.d).slice(0,6).map(x=>x.s);
+  const L2sorted = L2.slice().sort((a,b)=>dToUser(a)-dToUser(b)); // 依距離顯示
+
+  // 第3層：各第2層附近站（去重、hop≤500m），且「總和 ≤500m」
+  const excluded = new Set([rec.sno, nearest.sno, ...L2.map(s=>s.sno)]);
+  const seen = new Set(); const L3=[];
+  const candidates = [];
+  for(const s2 of L2){
+    for(const s of stations){
+      if(excluded.has(s.sno)||seen.has(s.sno)) continue;
+      const hop = hav(s2.latitude,s2.longitude,s.latitude,s.longitude);
+      if(hop<=500){ candidates.push({s, hop, dUser:dToUser(s)}); }
+    }
+  }
+  // 依「到使用者距離」由近到遠累計，總和≤500m 即停（使用者：總和）
+  candidates.sort((a,b)=>a.dUser-b.dUser);
+  let sum=0;
+  for(const c of candidates){
+    if(sum+c.dUser>500) break;
+    if(!seen.has(c.s.sno)){ seen.add(c.s.sno); L3.push(c.s); sum+=c.dUser; }
+  }
+
+  // ---------- 渲染（僅第1/2層） ----------
+  const mainVal = (s)=> mode==="borrow" ? s.available_rent_bikes : s.available_return_bikes;
+  const lvlRec = level(mainVal(rec));
+  const recD = dToUser(rec), recDir = dir4(bearing(pos.lat,pos.lon,rec.latitude,rec.longitude));
+  document.getElementById("big").innerHTML = `
+    <div class="big-card ${lvlRec==="red"?"disabled":""}">
+      <h2>📍 ${rec.sna} <span class="badge" style="background:${badgeColor[lvlRec]}">${badgeText[lvlRec]}</span></h2>
+      <div class="dir">距你 <b>${recD.toFixed(0)}m</b>（往${recDir}）</div>
+      <div class="count" style="color:${badgeColor[lvlRec]}">${mainVal(rec)} / ${rec.Quantity} ${mode==="borrow"?"可借":"空位"}</div>
+      <div class="info">來源更新 ${rec.mday}</div>
+      <button class="btn-map" onclick="openMap(${rec.latitude},${rec.longitude},'${rec.sna}')">🗺️ 在地圖顯示</button>
+    </div>`;
+
+  const cells = L2sorted.map(s=>{
+    const lvl = level(mainVal(s));
+    const d = dToUser(s), dir = dir4(bearing(pos.lat,pos.lon,s.latitude,s.longitude));
+    return `<div class="card ${lvl==="red"?"disabled":""}">
+      <div class="name">${s.sna} <span class="badge" style="background:${badgeColor[lvl]}">${badgeText[lvl]}</span></div>
+      <div class="info">距你 ${d.toFixed(0)}m（往${dir}）｜來源 ${s.mday}</div>
+      <div class="count" style="color:${badgeColor[lvl]}">${mainVal(s)} / ${s.Quantity} ${mode==="borrow"?"可借":"空位"}</div>
+      <button class="btn-map" onclick="openMap(${s.latitude},${s.longitude},'${s.sna}')">🗺️ 在地圖顯示</button>
+    </div>`;
+  }).join("");
+  document.getElementById("grid").innerHTML = cells;
+
+  // ---------- 決策建議 ----------
+  const areaBikes = L3.reduce((a,s)=>a+s.available_rent_bikes,0) + L2.reduce((a,s)=>a+s.available_rent_bikes,0);
+  let recText;
+  if(mode==="borrow"){
+    recText = `✅ 前往推薦站「${rec.sna}」（${recDir} ${recD.toFixed(0)}m）——車 ${rec.available_rent_bikes}/${rec.Quantity}，走過去保證借得到。<br>`;
+    if(mainVal(rec)<=2){
+      recText += `<b>備選</b>：附近 ${L2sorted.slice().sort((a,b)=>b.available_rent_bikes-a.available_rent_bikes)[0]?.sna ?? ""}（${L2sorted[0]?.sna?("車 "+L2sorted.sort((a,b)=>b.available_rent_bikes-a.available_rent_bikes)[0].available_rent_bikes):""}）`;
+    } else {
+      recText += `附近（含第3層）共 ${areaBikes} 台車可借，把握度高。`;
+    }
+  }else{
+    const has = rec.available_return_bikes>0;
+    recText = has
+      ? `✅ 前往最近可還站「${rec.sna}」（${recDir} ${recD.toFixed(0)}m）——空位 ${rec.available_return_bikes}/${rec.Quantity}。<br>附近（含第3層）共 ${areaBikes} 台車可借 → 空位會持續釋出。`
+      : `⚠️ 附近都滿了。往${recDir} ${recD.toFixed(0)}m 的「${rec.sna}」空位 ${rec.available_return_bikes}/${rec.Quantity}（低把握）；可等車多的站釋出空位。`;
+  }
+  document.getElementById("recommend").innerHTML = recText;
+}
+
+function openMap(lat,lon,name){
+  window.location.href = `https://maps.apple.com/?ll=${lat},${lon}&q=${encodeURIComponent(name)}`;
+}
+function setMode(m){ mode=m; build(); document.querySelector(".tab.borrow").classList.toggle("active",m==="borrow");
+  document.querySelector(".tab.return").classList.toggle("active",m==="return"); }
+
+locate();
+fetchJson();
+setInterval(fetchJson, REFRESH_MS);
+</script>
+</body>
+</html>
