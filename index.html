@@ -167,10 +167,11 @@ function travelTime(dist_m, kmh){
 
 // ---------- 決策分數 ----------
 function borrowScore(s){
-  const countScore = Math.min(s.available_rent_bikes/10, 1);
+  // 車多為贏（車數權重最高）；距離與機率同等重要；佔用率僅作容量校正（不再重複計權重）
+  const countScore = Math.min(s.available_rent_bikes/10, 1);   // 車數（14 台即達滿分）
   const distScore  = Math.max(0, 1 - dToUser(s)/1000);
-  const prob       = s.available_rent_bikes / s.Quantity;
-  return 0.45*countScore + 0.20*distScore + 0.20*prob + 0.15*prob;
+  const prob       = s.available_rent_bikes / s.Quantity;      // 佔用率（輕量校正）
+  return 0.45*countScore + 0.30*distScore + 0.25*prob;
 }
 function returnScore(s){
   const slotRatio = s.available_return_bikes / s.Quantity;
