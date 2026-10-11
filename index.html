@@ -167,11 +167,11 @@ function travelTime(dist_m, kmh){
 }
 
 // ---------- 決策分數 ----------
-// 距離分數：250m 內滿分；250→500m 線性遞減至 0；500m 以上為 0
+// 距離分數：200m 內滿分；200→500m 線性遞減至 0；500m 以上為 0
 function distScoreOf(d){
-  if(d<=250) return 1;
+  if(d<=200) return 1;
   if(d>=500) return 0;
-  return 1 - (d-250)/250;
+  return 1 - (d-200)/300;
 }
 function borrowScore(s){
   // 車多為贏（車數權重最高）；距離與機率；附近站點車多則加權（即使本站沒車，下一站機會大）
