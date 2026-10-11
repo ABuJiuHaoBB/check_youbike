@@ -174,11 +174,15 @@ function distScoreOf(d){
   return 1 - (d-200)/300;
 }
 function borrowScore(s){
-  // 車多為贏（車數權重最高）；距離與機率；附近站點車多則加權（即使本站沒車，下一站機會大）
+  const d = dToUser(s);
   const countScore = Math.min(s.available_rent_bikes/10, 1);   // 車數
-  const distScore  = distScoreOf(dToUser(s));
+  const distScore  = distScoreOf(d);
   const prob       = s.available_rent_bikes / s.Quantity;      // 佔用率（校正）
   const nbScore    = Math.min((nbMap[s.sno]||0)/10, 1);        // 附近站車多（10 台即滿分）
+  if(d <= 200){
+    // 200m 內：不看佔用率，車多就贏（佔用率權重 0.20 移到車數）
+    return 0.60*countScore + 0.25*distScore + 0.15*nbScore;
+  }
   return 0.40*countScore + 0.25*distScore + 0.20*prob + 0.15*nbScore;
 }
 function returnScore(s){
