@@ -59,6 +59,8 @@
   .badge.green { background:var(--green-bg); color:var(--green-text); }
   .badge.yellow { background:var(--amber-bg); color:var(--amber-text); }
   .badge.red { background:var(--red-bg); color:var(--red-text); }
+  .badge.edge { background:#EDE9FE; color:#6D28D9; }
+  .edge-note { font-size:12px; color:#6D28D9; margin-top:4px; }
 
   .recommend { background:#FEF3C7; border:1px solid #F5D78C; border-radius:12px; padding:10px 12px; font-size:13px; margin-top:14px; }
 </style>
@@ -82,16 +84,23 @@
 </main>
 <script>
 const URL = "https://tcgbusfs.blob.core.windows.net/dotapp/youbike/v2/youbike_immediate.json";
+const SEED_URL = "https://abujiuhaobb.github.io/check_youbike/neighborhood_index.json";  // 可選暖啟動種子（無則本地建）
 const REFRESH_MS = 60000;
 const RADIUS_M = 500;   // 推薦站搜尋半徑（500m 內優先；沒站/沒車才走更遠）
+const IDX_RADIUS = 1000;   // 靜態索引鄰居半徑（m）
+const IDX_CELL = 0.005;    // 網格分桶大小（度，約 500m）
+const IDX_K = 2;           // 網格鄰近搜尋半徑（格，覆蓋 >= IDX_RADIUS）
 let mode = "borrow";
 let pos = null;
 let raw = [];
 let lastFetch = null;
 let locating = false;
 let nbMap = {};              // 每個站 500m 內其他站的總車數（供借車加權）
+let liveBySno = {};          // 即時資料查表（sno → 站點）
+let idx = null;              // 靜態空間索引 {fingerprint, radius, stations:{sno:{...}}}
+let idxReady = false;
 
-// 借車：車>10 綠 / 3-9 黃 / 0-2 紅  還車：空位>5 綠 / 1-4 黃 / 0 紅
+// 借車：車>10 綠 / 3-9 黃 / 0-2 紅 還車：空位>5 綠 / 1-4 黃 / 0 紅
 function level(count){
   if(mode==="borrow") return count>10 ? "green" : (count>=3 ? "yellow" : "red");
   // 還車：機會高(≥6) / 有機會(2-5) / 先不要(0-1)
@@ -196,18 +205,126 @@ function returnScore(s){
   return 0.55*distScore + 0.45*slotRatio;
 }
 
+// ---------- 邊緣運算：靜態空間索引（手機本地建，免上傳） ----------
+function sleep(ms){ return new Promise(r=>setTimeout(r,ms)); }
+
+// 站點指紋：對「站號:緯度:經度(6位)」排序後做 FNV-1a 雙雜湊，偵測站點集合是否變動
+function fingerprintOf(stations){
+  const parts = stations.map(s=>s.sno+":"+Math.floor(s.latitude*1e6+0.5)+":"+Math.floor(s.longitude*1e6+0.5)).sort();
+  const str = parts.join("|");
+  let h1=0x811c9dc5>>>0, h2=0xcbf29ce4>>>0;
+  for(let i=0;i<str.length;i++){
+    const c=str.charCodeAt(i);
+    h1=(Math.imul(h1^c,0x01000193)>>>0);   // 32 位元乘法（避免雙精度丟失）
+    h2=(Math.imul(h2^c,0x01000193)>>>0);
+  }
+  return h1.toString(16)+"-"+h2.toString(16);
+}
+
+// 網格分桶：把站分到格子，只對「鄰近格子」算距離（把 O(N²) 降到近 O(N)）
+function cellKey(lat,lon){ return Math.floor(lat/IDX_CELL)+","+Math.floor(lon/IDX_CELL); }
+function buildIndex(stations){
+  const grid = new Map();
+  for(const s of stations){
+    const k = cellKey(s.latitude, s.longitude);
+    if(!grid.has(k)) grid.set(k, []);
+    grid.get(k).push(s);
+  }
+  const out = {};
+  for(const s of stations){
+    const ci = Math.floor(s.latitude/IDX_CELL), cj = Math.floor(s.longitude/IDX_CELL);
+    const nb = [];
+    let nnDist = Infinity, nnSno = null;
+    for(let di=-IDX_K; di<=IDX_K; di++){
+      for(let dj=-IDX_K; dj<=IDX_K; dj++){
+        const arr = grid.get((ci+di)+","+(cj+dj));
+        if(!arr) continue;
+        for(const t of arr){
+          if(t.sno===s.sno) continue;
+          const d = hav(s.latitude,s.longitude,t.latitude,t.longitude);
+          if(d<nnDist){ nnDist=d; nnSno=t.sno; }
+          if(d<=IDX_RADIUS){
+            nb.push({sno:t.sno, m:Math.round(d), dir:dir4(bearing(s.latitude,s.longitude,t.latitude,t.longitude))});
+          }
+        }
+      }
+    }
+    nb.sort((a,b)=>a.m-b.m);
+    out[s.sno] = {
+      name: shortName(s.sna), area: s.sarea, lat: s.latitude, lon: s.longitude,
+      nn_dist_m: (nnSno?Math.round(nnDist):null), nn_sno: nnSno,
+      nb_400: nb.filter(x=>x.m<=400).length, nb_500: nb.filter(x=>x.m<=500).length,
+      nb_600: nb.filter(x=>x.m<=600).length, nb_1000: nb.filter(x=>x.m<=1000).length,
+      edge: nb.filter(x=>x.m<=400).length===0,
+      low_backup: nb.filter(x=>x.m<=500).length===0,
+      orphan: nb.filter(x=>x.m<=600).length===0,
+      nb: nb,
+    };
+  }
+  return out;
+}
+
+// IndexedDB 快取（localStorage ~5MB 太緊，索引 ~4MB 應放 IndexedDB）
+function idxOpen(){
+  return new Promise((res,rej)=>{ const rq=indexedDB.open("youbike_index",1);
+    rq.onupgradeneeded=()=>rq.result.createObjectStore("idx");
+    rq.onsuccess=()=>res(rq.result); rq.onerror=()=>rej(rq.error); });
+}
+function idxPut(obj){
+  try{ idxOpen().then(db=>{ const tx=db.transaction("idx","readwrite"); tx.objectStore("idx").put(obj,"main");
+        tx.oncomplete=()=>{}; tx.onerror=()=>{}; }).catch(()=>{}); }catch(e){}
+}
+function idxGet(){
+  return new Promise((res)=>{ try{
+    idxOpen().then(db=>{ const tx=db.transaction("idx","readonly"); const rq=tx.objectStore("idx").get("main");
+      rq.onsuccess=()=>res(rq.result||null); rq.onerror=()=>res(null); }).catch(()=>res(null));
+  }catch(e){ res(null); } });
+}
+
+// 確保索引：快取 → GitHub 種子（可選）→ 手機本地建（邊緣運算）
+async function ensureIndex(fp, stations){
+  // 1) 本機快取（IndexedDB）
+  const cached = await idxGet();
+  if(cached && cached.fingerprint===fp){ idx=cached; idxReady=true; return; }
+  // 2) GitHub 種子（可選；無則略過，本地建）
+  try{
+    const r = await fetch(SEED_URL);
+    if(r.ok){
+      const j = await r.json();
+      const seed = { fingerprint: (j.meta&&j.meta.station_fingerprint)||fp, radius: (j.meta&&j.meta.radius_m)||IDX_RADIUS, stations: {} };
+      for(const s of (j.stations||[])) seed.stations[s.sno]=s;
+      if(seed.fingerprint===fp){ idx=seed; idxReady=true; idxPut(idx); return; }
+    }
+  }catch(e){}
+  // 3) 手機本地建（邊緣運算核心；等待 DOM 先繪出「建索引中…」）
+  await sleep(60);
+  idx = { fingerprint: fp, radius: IDX_RADIUS, stations: buildIndex(stations) };
+  idxReady = true;
+  idxPut(idx);
+}
+
 // ---------- 抓取 ----------
-// 計算每個站 500m 內其他站的總車數（僅供借車加權；每次資料刷新時重算）
+// 計算每個站 500m 內其他站的總車數。有索引→查索引（O(N)）；無索引→退化直接算（O(N²)）
 function computeNbMap(){
   nbMap = {};
-  for(let i=0;i<raw.length;i++){
-    const a = raw[i]; let sum = 0;
-    for(let j=0;j<raw.length;j++){
-      if(i===j) continue;
-      const b = raw[j];
-      if(hav(a.latitude,a.longitude,b.latitude,b.longitude) <= 500){ sum += b.available_rent_bikes; }
+  if(idxReady && idx.stations){
+    for(const sno in idx.stations){
+      let sum = 0;
+      for(const e of idx.stations[sno].nb){
+        if(e.m<=500){ const t=liveBySno[e.sno]; if(t) sum+=t.available_rent_bikes; }
+      }
+      nbMap[sno]=sum;
     }
-    nbMap[a.sno] = sum;
+  }else{
+    for(let i=0;i<raw.length;i++){
+      const a = raw[i]; let sum = 0;
+      for(let j=0;j<raw.length;j++){
+        if(i===j) continue;
+        const b = raw[j];
+        if(hav(a.latitude,a.longitude,b.latitude,b.longitude) <= 500){ sum += b.available_rent_bikes; }
+      }
+      nbMap[a.sno] = sum;
+    }
   }
 }
 
@@ -217,6 +334,13 @@ async function fetchJson(){
     raw = j.filter(d=>String(d.act)==="1" && d.Quantity>0);
     lastFetch = new Date();
     setMeta(`已刷新 ${lastFetch.toLocaleTimeString()}｜共 ${raw.length} 站`);
+    liveBySno = {}; for(const s of raw) liveBySno[s.sno]=s;
+    const fp = fingerprintOf(raw);
+    if(idxReady && idx.fingerprint===fp){
+      computeNbMap(); build(); return;   // 站點未變：查索引 + join 車數（O(N)）
+    }
+    setMeta(`建索引中…（${raw.length} 站）`);
+    await ensureIndex(fp, raw);          // 站點變動/首次：手機本地重建索引
     computeNbMap();
     build();
   }catch(e){ setMeta("抓取失敗："+e.message); }
@@ -255,11 +379,25 @@ function build(){
   const excluded = new Set([rec.sno, nearest.sno, ...L2.map(s=>s.sno)]);
   const seen = new Set(); const L3=[];
   const candidates = [];
-  for(const s2 of L2){
-    for(const s of stations){
-      if(excluded.has(s.sno)||seen.has(s.sno)) continue;
-      const hop = hav(s2.latitude,s2.longitude,s.latitude,s.longitude);
-      if(hop<=500){ candidates.push({s, hop, dUser:dToUser(s)}); }
+  if(idxReady && idx.stations){
+    // 查索引：每個第2層站的鄰居清單（hop≤500m），免 O(N²)
+    for(const s2 of L2){
+      const nbs = idx.stations[s2.sno] ? idx.stations[s2.sno].nb : [];
+      for(const e of nbs){
+        if(e.m>500) continue;                       // hop ≤500m
+        const s = liveBySno[e.sno];
+        if(!s || excluded.has(s.sno) || seen.has(s.sno)) continue;
+        candidates.push({s, dUser:dToUser(s)});
+      }
+    }
+  }else{
+    // 退化：直接 O(N²)
+    for(const s2 of L2){
+      for(const s of stations){
+        if(excluded.has(s.sno)||seen.has(s.sno)) continue;
+        const hop = hav(s2.latitude,s2.longitude,s.latitude,s.longitude);
+        if(hop<=500){ candidates.push({s, hop, dUser:dToUser(s)}); }
+      }
     }
   }
   candidates.sort((a,b)=>a.dUser-b.dUser);
@@ -269,14 +407,20 @@ function build(){
     if(!seen.has(c.s.sno)){ seen.add(c.s.sno); L3.push(c.s); sum+=c.dUser; }
   }
 
+  // 邊緣站標記：400m 內無鄰站（edge）；撲空（紅）時提示風險
+  const isEdge = (s)=> idxReady && idx.stations && idx.stations[s.sno] && idx.stations[s.sno].edge;
+  const edgeBadge = (s)=> isEdge(s) ? `<span class="badge edge">⛰ 邊緣</span>` : "";
+  const edgeNote  = (s)=> isEdge(s) && level(mainVal(s))==="red" ? `<div class="edge-note">⚠️ 到站撲空時附近無備選</div>` : "";
+
   // ---------- 渲染（僅大卡/第2層；卡片整張可點擊前往地圖） ----------
   const mainVal = (s)=> mode==="borrow" ? s.available_rent_bikes : s.available_return_bikes;
   const lvlRec = level(mainVal(rec));
   const recD = dToUser(rec), recDir = dir4(bearing(pos.lat,pos.lon,rec.latitude,rec.longitude));
   document.getElementById("big").innerHTML = `
     <div class="big-card" onclick="openMap(${rec.latitude},${rec.longitude},'${shortName(rec.sna)}')">
-      <h2>📍 ${shortName(rec.sna)} <span class="badge ${lvlRec}">${badgeText[lvlRec]}</span><span class="chev">›</span></h2>
+      <h2>📍 ${shortName(rec.sna)} ${edgeBadge(rec)}<span class="badge ${lvlRec}">${badgeText[lvlRec]}</span><span class="chev">›</span></h2>
       <div class="dir">距你 <b>${recD.toFixed(0)}m</b>（往${recDir}）${mode==="borrow"?"步行約":"騎車約"}${travelTime(recD, mode==="borrow"?3.5:8)}</div>
+      ${edgeNote(rec)}
       <div class="count ${lvlRec}">${mode==="borrow" ? "可借 "+mainVal(rec) : "空位 "+mainVal(rec)+"<small>"+rec.Quantity+"格</small>"}</div>
       <div class="info">${rec.mday}${isStale(rec.mday)?" <span class='stale'>超過兩分鐘未更新</span>":""}｜點卡片在地圖顯示</div>
     </div>`;
@@ -287,7 +431,8 @@ function build(){
     const countLine = mode==="borrow" ? `可借 ${mainVal(s)}` : `空位 ${mainVal(s)}<small>${s.Quantity}格</small>`;
     const stale = isStale(s.mday);
     return `<div class="card" onclick="openMap(${s.latitude},${s.longitude},'${shortName(s.sna)}')">
-      <div class="name">${shortName(s.sna)} <span class="chev">›</span></div>
+      <div class="name">${shortName(s.sna)} ${edgeBadge(s)}<span class="chev">›</span></div>
+      ${edgeNote(s)}
       <div class="count ${lvl}">${countLine} <span class="badge ${lvl}">${badgeText[lvl]}</span></div>
       <div class="info">距你 ${d.toFixed(0)}m（往${dir}）</div>
       <div class="info">${mode==="borrow"?"步行約":"騎車約"}${travelTime(d, mode==="borrow"?3.5:8)}</div>
@@ -312,6 +457,9 @@ function build(){
       ? `✅ 前往最近可還站「${shortName(rec.sna)}」（${recDir} ${recD.toFixed(0)}m）——空位 ${rec.available_return_bikes}/${rec.Quantity}。<br>附近（含第3層）共 ${areaBikes} 台車可借 → 空位會持續釋出。`
       : `⚠️ 附近都滿了。往${recDir} ${recD.toFixed(0)}m 的「${shortName(rec.sna)}」空位 ${rec.available_return_bikes}/${rec.Quantity}（先不要）；可等車多的站釋出空位。`;
   }
+  if(isEdge(rec) && level(mainVal(rec))==="red"){
+    recText += `<br><span class="edge-note">⛰ 此站為邊緣站（400m 內無鄰站）：撲空後需走較遠或原地等。</span>`;
+  }
   document.getElementById("recommend").innerHTML = recText;
 }
 
@@ -331,5 +479,6 @@ locate();
 fetchJson();
 setInterval(fetchJson, REFRESH_MS);
 </script>
+
 </body>
 </html>
