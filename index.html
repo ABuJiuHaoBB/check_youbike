@@ -173,17 +173,22 @@ function distScoreOf(d){
   if(d>=500) return 0;
   return 1 - (d-200)/300;
 }
+// smoothstep：0→1 平滑過渡（用於距離→佔用率權重）
+function smoothstep(e0,e1,x){
+  const t = Math.max(0, Math.min(1, (x-e0)/(e1-e0)));
+  return t*t*(3-2*t);
+}
 function borrowScore(s){
   const d = dToUser(s);
   const countScore = Math.min(s.available_rent_bikes/10, 1);   // 車數
   const distScore  = distScoreOf(d);
   const prob       = s.available_rent_bikes / s.Quantity;      // 佔用率（校正）
   const nbScore    = Math.min((nbMap[s.sno]||0)/10, 1);        // 附近站車多（10 台即滿分）
-  if(d <= 200){
-    // 200m 內：不看佔用率，車多就贏（佔用率權重 0.20 移到車數）
-    return 0.60*countScore + 0.25*distScore + 0.15*nbScore;
-  }
-  return 0.40*countScore + 0.25*distScore + 0.20*prob + 0.15*nbScore;
+  // 平滑版：越近，佔用率權重越低、車數權重越高（車多就贏）；無硬切分區間
+  const pf = smoothstep(200, 500, d);          // 0（很近）→1（遠）
+  const w_prob = 0.20 * pf;
+  const w_count = 0.40 + 0.20 * (1 - pf);      // 釋出的權重給車數
+  return w_count*countScore + 0.25*distScore + w_prob*prob + 0.15*nbScore;
 }
 function returnScore(s){
   const slotRatio = s.available_return_bikes / s.Quantity;
