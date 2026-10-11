@@ -36,9 +36,10 @@
 ## 技術與部署
 
 - **單一 `index.html`**（HTML + CSS + JavaScript 全內嵌），無框架、無後端、無外部依賴。
-- 直接 `fetch()` 官方 JSON（`Access-Control-Allow-Origin: *`）。
-- **部署**：GitHub Pages（`main` 分支、根目錄）。
-- **更新**：修改 `index.html` → `git commit && git push` → Pages 自動重建（約 1 分鐘生效）。
+- neighborhood_index.json：靜態空間索引
+- 邊緣運算 + 靜態空間索引（手機端本地建索引，免上傳重算）
+- 站點指紋（FNV-1a）自動偵測站點集合變動
+- 邊緣站標記（400m 無鄰站 16 站，階層孤兒 3 ⊆ 備選不足 6 ⊆ 邊緣 16）
 
 ## 資料來源
 
