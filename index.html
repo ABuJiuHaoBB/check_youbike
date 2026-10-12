@@ -443,6 +443,7 @@ function build(){
 
   // ---------- 決策建議 ----------
   const areaBikes = L3.reduce((a,s)=>a+s.available_rent_bikes,0) + L2.reduce((a,s)=>a+s.available_rent_bikes,0);
+  const areaSlots = L3.reduce((a,s)=>a+s.available_return_bikes,0) + L2.reduce((a,s)=>a+s.available_return_bikes,0);   // 還車：附近空位可還
   let recText;
   if(mode==="borrow"){
     recText = `✅ 前往推薦站「${shortName(rec.sna)}」（${recDir} ${recD.toFixed(0)}m）——車 ${rec.available_rent_bikes}/${rec.Quantity}，走過去保證借得到。<br>`;
@@ -454,7 +455,7 @@ function build(){
   }else{
     const has = rec.available_return_bikes>0;
     recText = has
-      ? `✅ 前往最近可還站「${shortName(rec.sna)}」（${recDir} ${recD.toFixed(0)}m）——空位 ${rec.available_return_bikes}/${rec.Quantity}。<br>附近（含第3層）共 ${areaBikes} 台車可借 → 空位會持續釋出。`
+      ? `✅ 前往最近可還站「${shortName(rec.sna)}」（${recDir} ${recD.toFixed(0)}m）——空位 ${rec.available_return_bikes}/${rec.Quantity}。<br>附近（含第3層）共 ${areaSlots} 個空位可還 → 空位會持續釋出。`
       : `⚠️ 附近都滿了。往${recDir} ${recD.toFixed(0)}m 的「${shortName(rec.sna)}」空位 ${rec.available_return_bikes}/${rec.Quantity}（先不要）；可等車多的站釋出空位。`;
   }
   if(isEdge(rec) && level(mainVal(rec))==="red"){
