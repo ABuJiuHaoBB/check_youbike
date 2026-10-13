@@ -22,6 +22,9 @@
   #map { height:25vh; min-height:0; }   /* 地圖高度固定 25vh */
 
   .list { background:var(--card); border-top:1px solid var(--line); flex:1; min-height:0; overflow-y:auto; padding:10px 14px; }
+  .item .row, .rec-item .row { display:flex; justify-content:space-between; align-items:center; gap:8px; }
+  .right { display:flex; align-items:center; gap:8px; }
+  .nav-btn { background:#F3F4F6; color:var(--slate); border:1px solid var(--line); border-radius:8px; padding:4px 10px; font-size:13px; cursor:pointer; }
   .item { padding:8px 4px; border-bottom:1px solid var(--line); font-size:14px; }
   .item .name { font-weight:600; }
   .item .info { font-size:13px; color:var(--muted); }
@@ -157,9 +160,8 @@ function build(){
   // 使用者藍點
   markers.push(L.circleMarker([pos.lat,pos.lon], {radius:8, color:'#2563EB', fillColor:'#2563EB', fillOpacity:.9}).addTo(map).bindPopup('📍 你'));
 
-  // 推薦站：紅色旗子
-  const flag = L.divIcon({className:'flag-icon', html:'🚩', iconSize:[30,30], iconAnchor:[15,30]});
-  markers.push(L.marker([rec.latitude,rec.longitude], {icon:flag}).addTo(map).bindPopup(`🚩 ${shortName(rec.sna)}｜${mode==="borrow"?"可借":"空位"} ${mode==="borrow"?rec.available_rent_bikes:rec.available_return_bikes}`));
+  // 推薦站：紅點
+  markers.push(L.circleMarker([rec.latitude,rec.longitude], {radius:8, color:'#E11D48', fillColor:'#E11D48', fillOpacity:.9}).addTo(map).bindPopup(`🔴 ${shortName(rec.sna)}｜${mode==="borrow"?"可借":"空位"} ${mode==="borrow"?rec.available_rent_bikes:rec.available_return_bikes}`));
 
   // 其他 1–6：編號
   L2.forEach((s,i)=>{
@@ -174,17 +176,28 @@ function build(){
   const mainVal = (s)=> mode==="borrow" ? s.available_rent_bikes : s.available_return_bikes;
   const lvlRec = level(mainVal(rec));
   const recD = dToUser(rec), recDir = dir4(bearing(pos.lat,pos.lon,rec.latitude,rec.longitude));
-  const recItem = `<div class="rec-item"><div class="name">🚩 ${shortName(rec.sna)} <span class="badge ${lvlRec}" style="color:${badgeColor[lvlRec]}">${badgeText[lvlRec]}</span></div>
+  const recItem = `<div class="rec-item">
+    <div class="row"><div class="name">🔴 ${shortName(rec.sna)}</div>
+      <div class="right"><span class="badge ${lvlRec}" style="color:${badgeColor[lvlRec]}">${badgeText[lvlRec]}</span>
+      <button class="nav-btn" onclick="openMap(${rec.latitude},${rec.longitude},'${shortName(rec.sna)}')">導航</button></div></div>
     <div class="info">距你 ${recD.toFixed(0)}m（往${recDir}）${mode==="borrow"?"步行約":"騎車約"}${travelTime(recD, mode==="borrow"?3.5:8)}</div>
     <div class="info">${mode==="borrow"?"可借":"空位"} ${mainVal(rec)}${mode==="return"?"／"+rec.Quantity+"格":""}</div></div>`;
   const items = L2.map((s,i)=>{
     const lvl=level(mainVal(s)), d=dToUser(s), dir=dir4(bearing(pos.lat,pos.lon,s.latitude,s.longitude));
-    return `<div class="item"><div class="name">${i+1}. ${shortName(s.sna)} <span class="badge ${lvl}" style="color:${badgeColor[lvl]}">${badgeText[lvl]}</span></div>
+    return `<div class="item"><div class="row"><div class="name">${i+1}. ${shortName(s.sna)}</div>
+      <div class="right"><span class="badge ${lvl}" style="color:${badgeColor[lvl]}">${badgeText[lvl]}</span>
+      <button class="nav-btn" onclick="openMap(${s.latitude},${s.longitude},'${shortName(s.sna)}')">導航</button></div></div>
       <div class="info">距你 ${d.toFixed(0)}m（往${dir}）${mode==="borrow"?"步行約":"騎車約"}${travelTime(d, mode==="borrow"?3.5:8)}｜${mode==="borrow"?"可借":"空位"} ${mainVal(s)}${mode==="return"?"／"+s.Quantity+"格":""}</div></div>`;
   }).join("");
   document.getElementById("list").innerHTML = recItem + items;
 }
 
+function openMap(lat,lon,name){
+  const q = encodeURIComponent(name);
+  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+  const u = isIOS ? `https://maps.apple.com/?ll=${lat},${lon}&q=${q}` : `https://www.google.com/maps/search/?api=1&query=${lat},${lon}`;
+  window.location.href = u;
+}
 function setMode(m){ mode=m; build(); document.querySelector(".tab.borrow").classList.toggle("active",m==="borrow");
   document.querySelector(".tab.return").classList.toggle("active",m==="return"); }
 
