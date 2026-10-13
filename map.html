@@ -179,8 +179,9 @@ function build(){
     markers.push(L.marker([s.latitude,s.longitude], {icon:num}).addTo(map).bindPopup(`${i+1}. ${shortName(s.sna)}｜${mode==="borrow"?"可借":"空位"} ${mode==="borrow"?s.available_rent_bikes:s.available_return_bikes}`));
   });
 
-  // 地圖置中於使用者（藍點）
-  map.setView([pos.lat,pos.lon], 16);
+  // 自動縮放以涵蓋所有點（你、推薦站、1-6），避免推薦站超出範圍
+  const pts = [[pos.lat,pos.lon], [rec.latitude,rec.longitude], ...L2.map(s=>[s.latitude,s.longitude])];
+  map.fitBounds(L.latLngBounds(pts), {padding:[40,40], maxZoom:16});
 
   // 下方清單
   const mainVal = (s)=> mode==="borrow" ? s.available_rent_bikes : s.available_return_bikes;
