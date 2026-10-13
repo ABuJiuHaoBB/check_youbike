@@ -192,12 +192,12 @@ function borrowScore(s){
   const countScore = Math.min(s.available_rent_bikes/10, 1);   // 車數
   const distScore  = distScoreOf(d);
   const prob       = s.available_rent_bikes / s.Quantity;      // 佔用率（校正）
-  const nbScore    = Math.min((nbMap[s.sno]||0)/10, 1);        // 附近站車多（10 台即滿分）
+  const nbScore    = Math.min((nbMap[s.sno]||0)/20, 1);        // 附近站車多（距離加權，20 為滿分）
   // 平滑版：越近，佔用率權重越低、車數權重越高（車多就贏）；無硬切分區間
   const pf = smoothstep(200, 500, d);          // 0（很近）→1（遠）
-  const w_prob = 0.20 * pf;
-  const w_count = 0.40 + 0.20 * (1 - pf);      // 釋出的權重給車數
-  return w_count*countScore + 0.25*distScore + w_prob*prob + 0.15*nbScore;
+  const w_prob = 0.10 * pf;                    // 佔用率（較低）
+  const w_count = 0.40 + 0.10 * (1 - pf);      // 釋出的權重給車數
+  return w_count*countScore + 0.25*distScore + w_prob*prob + 0.25*nbScore;   // 附近車數權重 0.25
 }
 function returnScore(s){
   const slotRatio = s.available_return_bikes / s.Quantity;
@@ -307,11 +307,12 @@ async function ensureIndex(fp, stations){
 // 計算每個站 500m 內其他站的總車數。有索引→查索引（O(N)）；無索引→退化直接算（O(N²)）
 function computeNbMap(){
   nbMap = {};
+  // 附近車數「依距離加權」：越近的鄰站車越多，貢獻越高（不再封頂）
   if(idxReady && idx.stations){
     for(const sno in idx.stations){
       let sum = 0;
       for(const e of idx.stations[sno].nb){
-        if(e.m<=500){ const t=liveBySno[e.sno]; if(t) sum+=t.available_rent_bikes; }
+        if(e.m<=500){ const t=liveBySno[e.sno]; if(t){ const w=Math.max(0,1-e.m/500); sum += t.available_rent_bikes*w; } }
       }
       nbMap[sno]=sum;
     }
@@ -321,7 +322,8 @@ function computeNbMap(){
       for(let j=0;j<raw.length;j++){
         if(i===j) continue;
         const b = raw[j];
-        if(hav(a.latitude,a.longitude,b.latitude,b.longitude) <= 500){ sum += b.available_rent_bikes; }
+        const d = hav(a.latitude,a.longitude,b.latitude,b.longitude);
+        if(d<=500){ sum += b.available_rent_bikes * Math.max(0,1-d/500); }
       }
       nbMap[a.sno] = sum;
     }

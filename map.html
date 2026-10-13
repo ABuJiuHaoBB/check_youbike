@@ -78,7 +78,7 @@ function hav(lat1,lon1,lat2,lon2){
 }
 function shortName(n){ return String(n).replace(/^YouBike2\.0_/, ""); }
 function dToUser(s){ return hav(pos.lat,pos.lon,s.latitude,s.longitude); }
-function distScoreOf(d){ if(d<=250) return 1; if(d>=500) return 0; return 1-(d-250)/250; }
+function distScoreOf(d){ if(d<=200) return 1; if(d>=500) return 0; return 1-(d-200)/300; }
 function travelTime(dist_m, kmh){
   const sec = dist_m/(kmh*1000/3600); const halfMin = Math.round(sec/30); const mins = halfMin/2;
   if(mins<1) return "不到1分"; if(mins>=60){ const h=Math.floor(mins/60), m=Math.round(mins%60); return h+"小時"+(m?"約"+m+"分":""); }
@@ -91,10 +91,12 @@ function bearing(lat1,lon1,lat2,lon2){
   return (Math.atan2(y,x)*180/Math.PI+360)%360;
 }
 
+function smoothstep(e0,e1,x){ const t=Math.max(0,Math.min(1,(x-e0)/(e1-e0))); return t*t*(3-2*t); }
 function borrowScore(s){
-  const countScore=Math.min(s.available_rent_bikes/10,1), distScore=distScoreOf(dToUser(s));
-  const prob=s.available_rent_bikes/s.Quantity, nbScore=Math.min((nbMap[s.sno]||0)/10,1);
-  return 0.40*countScore+0.25*distScore+0.20*prob+0.15*nbScore;
+  const d=dToUser(s), countScore=Math.min(s.available_rent_bikes/10,1), distScore=distScoreOf(d);
+  const prob=s.available_rent_bikes/s.Quantity, nbScore=Math.min((nbMap[s.sno]||0)/20,1);
+  const pf=smoothstep(200,500,d), w_prob=0.10*pf, w_count=0.40+0.10*(1-pf);
+  return w_count*countScore+0.25*distScore+w_prob*prob+0.25*nbScore;   // 附近車數權重 0.25（距離加權）
 }
 function returnScore(s){
   const slotRatio=s.available_return_bikes/s.Quantity, distScore=distScoreOf(dToUser(s));
@@ -104,7 +106,8 @@ function computeNbMap(){
   nbMap={};
   for(let i=0;i<raw.length;i++){ const a=raw[i]; let sum=0;
     for(let j=0;j<raw.length;j++){ if(i===j) continue; const b=raw[j];
-      if(hav(a.latitude,a.longitude,b.latitude,b.longitude)<=500) sum+=b.available_rent_bikes; }
+      const d=hav(a.latitude,a.longitude,b.latitude,b.longitude);
+      if(d<=500) sum+=b.available_rent_bikes*Math.max(0,1-d/500); }
     nbMap[a.sno]=sum; }
 }
 
