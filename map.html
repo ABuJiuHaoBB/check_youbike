@@ -33,7 +33,11 @@
   .badge { display:inline-block; padding:2px 8px; border-radius:8px; font-size:12px; margin-left:6px; }
   .badge.green { background:var(--green-bg); color:var(--green-text); } .badge.yellow { background:var(--amber-bg); color:var(--amber-text); } .badge.red { background:var(--red-bg); color:var(--red-text); }
   .num-icon span { display:inline-block; border-radius:50%; width:26px; height:26px; line-height:26px; text-align:center; font-weight:700; font-size:13px; color:#fff; }
-  .flag-icon { font-size:26px; line-height:26px; text-align:center; }
+  .pin-icon { font-size:28px; line-height:28px; text-align:center; }
+  .flag-icon { font-size:34px; line-height:34px; text-align:center; filter:drop-shadow(0 0 5px rgba(225,29,72,.6)); }
+  .flag-icon.pulse { animation: pulse 1.3s infinite; }
+  @keyframes pulse { 0%{ filter:drop-shadow(0 0 5px rgba(225,29,72,.6)); } 50%{ filter:drop-shadow(0 0 14px rgba(225,29,72,.95)); } 100%{ filter:drop-shadow(0 0 5px rgba(225,29,72,.6)); } }
+  .rec-tip { background:#fff; border:1px solid #E11D48; color:#B91C1C; border-radius:8px; padding:4px 8px; font-size:12px; font-weight:600; }
 </style>
 </head>
 <body>
@@ -157,12 +161,15 @@ function build(){
   for(const m of markers) map.removeLayer(m);
   markers = [];
 
-  // 使用者藍點
-  markers.push(L.circleMarker([pos.lat,pos.lon], {radius:8, color:'#2563EB', fillColor:'#2563EB', fillOpacity:.9}).addTo(map).bindPopup('📍 你'));
+  // 使用者：圓形大頭針 📍
+  const pin = L.divIcon({className:'pin-icon', html:'📍', iconSize:[28,28], iconAnchor:[14,28]});
+  markers.push(L.marker([pos.lat,pos.lon], {icon:pin}).addTo(map).bindPopup('📍 你'));
 
-  // 推薦站：chequered flag 🏁
-  const flag = L.divIcon({className:'flag-icon', html:'🏁', iconSize:[30,30], iconAnchor:[15,30]});
-  markers.push(L.marker([rec.latitude,rec.longitude], {icon:flag}).addTo(map).bindPopup(`🏁 ${shortName(rec.sna)}｜${mode==="borrow"?"可借":"空位"} ${mode==="borrow"?rec.available_rent_bikes:rec.available_return_bikes}`));
+  // 推薦站：chequered flag 🏁（放大＋脈動光暈＋永久標籤，更醒目）
+  const flag = L.divIcon({className:'flag-icon pulse', html:'🏁', iconSize:[40,40], iconAnchor:[20,38]});
+  markers.push(L.marker([rec.latitude,rec.longitude], {icon:flag}).addTo(map)
+    .bindPopup(`🏁 ${shortName(rec.sna)}｜${mode==="borrow"?"可借":"空位"} ${mode==="borrow"?rec.available_rent_bikes:rec.available_return_bikes}`)
+    .bindTooltip(`🏁 推薦：${shortName(rec.sna)}（${mode==="borrow"?rec.available_rent_bikes:rec.available_return_bikes} ${mode==="borrow"?"台車":"空位"}）`, {permanent:true, direction:'top', offset:[0,-24], className:'rec-tip'}).openTooltip());
 
   // 其他 1–6：編號，顏色對齊機會（綠/黃/紅）
   const levelColor = {green:'#15803D', yellow:'#B45309', red:'#B91C1C'};
