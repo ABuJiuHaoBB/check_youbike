@@ -164,13 +164,13 @@ function build(){
   for(const m of markers) map.removeLayer(m);
   markers = [];
 
-  // 使用者：圓形大頭針 📍
+  // 使用者：圓形大頭針 📍（最高層，重疊時在最上）
   const pin = L.divIcon({className:'pin-icon', html:'📍', iconSize:[28,28], iconAnchor:[14,28]});
-  markers.push(L.marker([pos.lat,pos.lon], {icon:pin}).addTo(map).bindPopup('📍 你'));
+  markers.push(L.marker([pos.lat,pos.lon], {icon:pin, zIndexOffset:1000}).addTo(map).bindPopup('📍 你'));
 
-  // 推薦站：chequered flag 🏁（放大＋脈動光暈＋永久標籤，更醒目）
+  // 推薦站：chequered flag 🏁（次高層，重疊時僅次於使用者）
   const flag = L.divIcon({className:'flag-icon pulse', html:'🏁', iconSize:[40,40], iconAnchor:[20,38]});
-  markers.push(L.marker([rec.latitude,rec.longitude], {icon:flag}).addTo(map)
+  markers.push(L.marker([rec.latitude,rec.longitude], {icon:flag, zIndexOffset:900}).addTo(map)
     .bindPopup(`🏁 ${shortName(rec.sna)}｜${mode==="borrow"?"可借":"空位"} ${mode==="borrow"?rec.available_rent_bikes:rec.available_return_bikes}`));
 
   // 其他 1–6：編號，顏色對齊機會（綠/黃/紅）
@@ -179,7 +179,8 @@ function build(){
     const lvl = level(mode==="borrow"?s.available_rent_bikes:s.available_return_bikes);
     const col = levelColor[lvl];
     const num = L.divIcon({className:'num-icon', html:`<span style="background:${col}">${i+1}</span>`, iconSize:[26,26], iconAnchor:[13,26]});
-    markers.push(L.marker([s.latitude,s.longitude], {icon:num}).addTo(map).bindPopup(`${i+1}. ${shortName(s.sna)}｜${mode==="borrow"?"可借":"空位"} ${mode==="borrow"?s.available_rent_bikes:s.available_return_bikes}`));
+    // 編號疊放優先：1 最高、6 最低（重疊時依序在上層）
+    markers.push(L.marker([s.latitude,s.longitude], {icon:num, zIndexOffset:800-i*100}).addTo(map).bindPopup(`${i+1}. ${shortName(s.sna)}｜${mode==="borrow"?"可借":"空位"} ${mode==="borrow"?s.available_rent_bikes:s.available_return_bikes}`));
   });
 
   // 自動縮放以涵蓋所有點（你、推薦站、1-6），避免推薦站超出範圍
