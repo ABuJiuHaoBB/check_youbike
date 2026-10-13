@@ -168,8 +168,7 @@ function build(){
   // 推薦站：chequered flag 🏁（放大＋脈動光暈＋永久標籤，更醒目）
   const flag = L.divIcon({className:'flag-icon pulse', html:'🏁', iconSize:[40,40], iconAnchor:[20,38]});
   markers.push(L.marker([rec.latitude,rec.longitude], {icon:flag}).addTo(map)
-    .bindPopup(`🏁 ${shortName(rec.sna)}｜${mode==="borrow"?"可借":"空位"} ${mode==="borrow"?rec.available_rent_bikes:rec.available_return_bikes}`)
-    .bindTooltip(`🏁 推薦：${shortName(rec.sna)}（${mode==="borrow"?rec.available_rent_bikes:rec.available_return_bikes} ${mode==="borrow"?"台車":"空位"}）`, {permanent:true, direction:'top', offset:[0,-24], className:'rec-tip'}).openTooltip());
+    .bindPopup(`🏁 ${shortName(rec.sna)}｜${mode==="borrow"?"可借":"空位"} ${mode==="borrow"?rec.available_rent_bikes:rec.available_return_bikes}`));
 
   // 其他 1–6：編號，顏色對齊機會（綠/黃/紅）
   const levelColor = {green:'#15803D', yellow:'#B45309', red:'#B91C1C'};
