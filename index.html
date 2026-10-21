@@ -63,6 +63,7 @@
   .edge-note { font-size:12px; color:#6D28D9; margin-top:4px; }
 
   .recommend { background:#FEF3C7; border:1px solid #F5D78C; border-radius:12px; padding:10px 12px; font-size:13px; margin-top:14px; }
+  .floating-nav { position:fixed; bottom:16px; right:16px; z-index:2000; background:#2563EB; color:#fff; border:none; border-radius:999px; padding:10px 16px; font-size:14px; font-weight:600; cursor:pointer; box-shadow:0 2px 8px rgba(0,0,0,.25); }
 </style>
 </head>
 <body>
@@ -82,6 +83,7 @@
   <div class="grid" id="grid"></div>
   <div class="recommend" id="recommend"></div>
 </main>
+<button class="floating-nav" onclick="location.href='map.html'">🗺️ 地圖模式</button>
 <script>
 const URL = "https://tcgbusfs.blob.core.windows.net/dotapp/youbike/v2/youbike_immediate.json";
 const SEED_URL = "https://abujiuhaobb.github.io/check_youbike/neighborhood_index.json";  // 可選暖啟動種子（無則本地建）
